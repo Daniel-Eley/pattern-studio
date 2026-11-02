@@ -44,3 +44,5 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 6 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DEMO_MODE = os.getenv('DEMO_MODE', '0') == '1'
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'groq')
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'openai/gpt-oss-20b')

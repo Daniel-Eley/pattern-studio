@@ -10,7 +10,7 @@ A Django + React application that turns plain-language descriptions into regular
 
 - Upload UTF-8 CSV, XLSX, or XLS; view data in pages of 100 rows.
 - Describe a pattern (for example, “Find email addresses in the Email column”).
-- Generate a structured regex plan with the OpenAI Responses API; view the regex, explanation, match count, and before/after cells.
+- Generate a structured regex plan with Groq (free tier) or the optional OpenAI provider; view the regex, explanation, match count, and before/after cells.
 - Override the target column, supply a literal replacement, or leave it blank to remove matches.
 - Apply only after preview, reset to the original data, and download CSV or XLSX.
 - Session-scoped datasets, CSRF protection, bounded file parsing, regex execution deadlines, and formula-safe exports.
@@ -43,25 +43,26 @@ For frontend hot reload, run `npm run dev` from `frontend/` in a second terminal
 Set these values in the root `.env` file and restart Django:
 
 ```dotenv
-OPENAI_API_KEY=your-own-key
-OPENAI_MODEL=gpt-4o-mini
+LLM_PROVIDER=groq
+GROQ_API_KEY=your-own-key
+GROQ_MODEL=openai/gpt-oss-20b
 DEMO_MODE=0
 ```
 
-The key is used only by Django. Never commit it or expose it through a frontend environment variable. An API account with model access and available credit is required; a chat subscription alone is not API configuration. The model can be changed to another model supporting structured Responses output.
+The key is used only by Django. Never commit it or expose it through a frontend environment variable. Create a free account at https://console.groq.com and generate a Groq API key. Stay on its Free plan; no paid OpenAI API account is needed. Free-tier quotas apply, so requests may temporarily stop when the quota is exhausted. Check the current limits in your Groq dashboard. The optional OpenAI adapter requires `LLM_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` (defaults to `gpt-4o-mini`); that provider may charge for API usage.
 
-Only the user's description and column names are sent to the model. Spreadsheet cell values are not sent. Descriptions and headers may themselves contain private information. Generated regex is validated and executed locally on the server. Responses are requested with `store=False`; provider retention rules still apply.
+Only the user's description and column names are sent to the model. Spreadsheet cell values are not sent. Descriptions and headers may themselves contain private information. Generated regex is validated and executed locally on the server. The OpenAI adapter requests `store=False`. Groq has its own data handling policies; provider retention rules still apply.
 
-The integration follows [OpenAI structured outputs documentation](https://developers.openai.com/api/docs/guides/structured-outputs).
+The free default uses [Groq structured outputs](https://console.groq.com/docs/structured-outputs) through its [OpenAI-compatible API](https://console.groq.com/docs/openai). The optional OpenAI integration follows [OpenAI structured outputs documentation](https://developers.openai.com/api/docs/guides/structured-outputs).
 
 ## Architecture
 
 ```text
 React + Vite → same-origin Django JSON API → service layer
                                             ├─ bounded CSV / Excel parsing
-                                            ├─ OpenAI structured pattern plan
+                                            ├─ Groq / OpenAI structured pattern plan
                                             ├─ regex validation + timed replacement
-                                            └─ PostgreSQL (production) / SQLite (local)
+                                            └─ SQLite (free demo) / optional PostgreSQL
 ```
 
 `Dataset` stores original/current rows and a monotonically increasing version. `Operation` stores a preview plan and its source version. Applying a stale or already-applied plan returns 409, preventing an accidental second replacement. Applying changes never requires another LLM call.
@@ -103,19 +104,21 @@ Tests cover the assignment's email example, preview/apply/reset/export, session 
 
 ## Deployment on Render
 
-`Dockerfile` and `render.yaml` define a web service and PostgreSQL database. Review current plan availability and any costs shown by Render before completing account setup. The free database may have a limited lifetime; choose a suitable plan for the review period.
+`Dockerfile` and `render.yaml` define one Free web service with temporary SQLite storage. There is no separately provisioned database, avoiding Render's 30-day free Postgres expiry. Uploaded data and sessions can disappear whenever the instance restarts, spins down, or redeploys. Download results during your session. This is suitable for a reviewer demo, not durable storage.
+
+Stay on Render's Free compute plan and Groq's Free API plan. Render sleeps idle services and imposes usage limits; the first request after inactivity can be slow. Review any payment or upgrade prompt before proceeding. Free-tier availability and limits can change.
 
 1. Create or sign into GitHub, create a `pattern-studio` repository, and push this source. Do not upload `.env`, `.venv`, or database files.
 2. Create or sign into Render and connect GitHub.
 3. Choose **New → Blueprint**, select the repository, and use its `render.yaml`.
-4. Supply `OPENAI_API_KEY`. The blueprint generates `SECRET_KEY` and connects `DATABASE_URL`. Keep `DEMO_MODE=0` for the final submission.
+4. Supply `GROQ_API_KEY`. The blueprint generates `SECRET_KEY` and selects the Groq provider. Keep `DEMO_MODE=0` for the final submission.
 5. Deploy. The container builds React, collects static assets, runs database migrations, and starts Gunicorn. Render supplies the hostname, which Django adds to its allowed hosts.
 6. Open the resulting HTTPS URL. Test upload → real LLM preview → apply → download in a new browser session, plus reset and invalid input.
 7. Record the verified public URL here and in the internship submission.
 
 See [Render's Django deployment guide](https://render.com/docs/deploy-django) and [Docker deployment documentation](https://render.com/docs/docker).
 
-For another container host, set `SECRET_KEY`, `DEBUG=0`, `ALLOWED_HOSTS`, `DATABASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and `DEMO_MODE=0`. The service must sit behind a trusted HTTPS proxy that sets `X-Forwarded-Proto`; never expose the application directly with untrusted forwarded headers.
+For another container host, set `SECRET_KEY`, `DEBUG=0`, `ALLOWED_HOSTS`, `LLM_PROVIDER=groq`, `GROQ_API_KEY`, `GROQ_MODEL`, and `DEMO_MODE=0`. Add `DATABASE_URL` for persistent PostgreSQL storage if needed. The service must sit behind a trusted HTTPS proxy that sets `X-Forwarded-Proto`; never expose the application directly with untrusted forwarded headers.
 
 ## Demo video
 
@@ -128,7 +131,7 @@ The recording has not been made yet. Use [the 90-second demo script](docs/demo-s
 - Only string cells are transformed. Replacement text is literal: `$1` and `\1` are not capture references. Context-dependent zero-width matches can occur; patterns matching the empty input are rejected.
 - Exports prefix formula-like strings with an apostrophe to prevent spreadsheet formula execution. This is an intentional change to exported literal values, including headers.
 - Preview displays up to six changed cells; the API returns at most 100 examples. Counts and apply cover the entire dataset.
-- Workspace access expires after 24 hours. Data is not automatically deleted at the instant access expires. Schedule `python manage.py cleanup_data` hourly on your host to delete expired datasets, and `python manage.py clearsessions` daily for session records. Cleanup also runs on container startup.
+- Free deployment storage is ephemeral: a restart, spin-down, or redeploy can delete datasets and sessions sooner. Workspace access otherwise expires after 24 hours. Data is not automatically deleted at the instant access expires. Schedule `python manage.py cleanup_data` hourly on your host to delete expired datasets, and `python manage.py clearsessions` daily for session records. Cleanup also runs on container startup.
 - Limits are per session (10 uploads and 30 successful previews/hour), not abuse-proof global rate limiting. Before promoting beyond a reviewer demo, add authenticated accounts, edge rate limiting, a provider spending limit, scheduled cleanup, and monitoring. Failed LLM requests do not consume the preview quota.
 - Regex generation is probabilistic; review the pattern and preview. Email and phone matching are practical patterns, not complete standards validators.
 - Optional extra LLM transformations and large-file support are intentionally outside the initial scope.

@@ -105,7 +105,7 @@ class ServicesTests(TestCase):
         self.assertIn(b"' +SUM", content)
         self.assertIn(b"'=header", content)
 
-    @override_settings(DEMO_MODE=False)
+    @override_settings(DEMO_MODE=False, LLM_PROVIDER='openai')
     @patch('processor.services.OpenAI')
     def test_real_llm_adapter_passes_no_cell_data(self, mock_client):
         plan = PatternPlan(pattern=r'\d{3}', columns=['Code'], ignore_case=False, explanation='Three digits')
@@ -116,9 +116,35 @@ class ServicesTests(TestCase):
         payload = json.loads(call['input'][1]['content'])
         self.assertEqual(set(payload), {'description', 'available_columns'})
 
-    @override_settings(DEMO_MODE=False)
+    @override_settings(DEMO_MODE=False, LLM_PROVIDER='openai')
     @patch('processor.services.OpenAI')
     def test_model_refusal(self, mock_client):
         mock_client.return_value.responses.parse.return_value = SimpleNamespace(output_parsed=None)
         with self.assertRaises(InputError):
             generate_plan('Find a pattern', ['Code'])
+
+    @override_settings(DEMO_MODE=False, LLM_PROVIDER='groq')
+    @patch.dict('os.environ', {'GROQ_API_KEY': 'test-only-key'})
+    @patch('processor.services.OpenAI')
+    def test_groq_adapter_and_validation(self, mock_client):
+        plan = PatternPlan(pattern=r'\d{3}', columns=['Code'], ignore_case=False, explanation='Three digits')
+        completion = mock_client.return_value.chat.completions.create
+        completion.return_value = SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content=plan.model_dump_json()))])
+        self.assertEqual(generate_plan('Find three digits', ['Code']), plan)
+        self.assertEqual(mock_client.call_args.kwargs['base_url'], 'https://api.groq.com/openai/v1')
+        args = completion.call_args.kwargs
+        self.assertTrue(args['response_format']['json_schema']['strict'])
+        self.assertFalse(args['response_format']['json_schema']['schema']['additionalProperties'])
+        self.assertEqual(set(json.loads(args['messages'][1]['content'])), {'description', 'available_columns'})
+        completion.return_value.choices[0].message.content = '{"pattern": 3}'
+        with self.assertRaisesRegex(InputError, 'invalid pattern plan'):
+            generate_plan('Find digits', ['Code'])
+        completion.return_value.choices[0].finish_reason = 'length'
+        with self.assertRaisesRegex(InputError, 'could not complete'):
+            generate_plan('Find digits', ['Code'])
+
+    @override_settings(DEMO_MODE=False, LLM_PROVIDER='groq')
+    @patch.dict('os.environ', {'GROQ_API_KEY': ''})
+    def test_missing_groq_key(self):
+        with self.assertRaisesRegex(InputError, 'GROQ_API_KEY'):
+            generate_plan('Find digits', ['Code'])

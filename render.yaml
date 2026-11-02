@@ -11,16 +11,9 @@ services:
         value: "0"
       - key: DEMO_MODE
         value: "0"
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini
-      - key: OPENAI_API_KEY
+      - key: LLM_PROVIDER
+        value: groq
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: GROQ_API_KEY
         sync: false
-      - key: DATABASE_URL
-        fromDatabase:
-          name: pattern-studio-db
-          property: connectionString
-databases:
-  - name: pattern-studio-db
-    plan: free
-    databaseName: patternstudio
-    user: patternstudio
