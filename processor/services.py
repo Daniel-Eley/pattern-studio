@@ -156,18 +156,21 @@ def transform(rows, all_columns, pattern, selected, replacement, ignore_case=Fal
                 if time.monotonic() > deadline:
                     raise TimeoutError()
                 value = row[col_index]
-                if not isinstance(value, str):
+                if isinstance(value, bool) or not isinstance(value, (str, int, float)):
                     continue
+                # Excel stores numeric cells as numbers, unlike CSV. Match their
+                # text representation while preserving untouched values/types.
+                text_value = str(value)
                 # Callable replacement treats backslashes and dollar signs literally.
-                replaced, count = compiled.subn(lambda match: replacement, value, timeout=0.03)
+                replaced, count = compiled.subn(lambda match: replacement, text_value, timeout=0.03)
                 if len(replaced) > 20000:
                     raise InputError('A replacement would make a cell too large.')
                 matches += count
-                if replaced != value:
+                if replaced != text_value:
                     result[col_index] = replaced
                     changed_cells += 1
                     if len(changes) < 100:
-                        changes.append({'row': row_index + 1, 'column': all_columns[col_index], 'before': value, 'after': replaced})
+                        changes.append({'row': row_index + 1, 'column': all_columns[col_index], 'before': text_value, 'after': replaced})
             output.append(result)
     except TimeoutError as exc:
         raise InputError('This pattern took too long. Try a simpler, more specific description.') from exc

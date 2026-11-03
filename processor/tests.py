@@ -89,8 +89,21 @@ class ServicesTests(TestCase):
         output = io.BytesIO(); book.save(output)
         columns, rows = parse_upload(SimpleUploadedFile('book.xlsx', output.getvalue()))
         self.assertEqual(rows, [[12, 'email@example.com', None]])
-        result, _ = transform(rows, columns, r'\d+', ['ID', 'Text'], 'x')
+        result, _ = transform(rows, columns, r'\d+', ['Text'], 'x')
         self.assertEqual(result[0][0], 12)
+
+    def test_numeric_matching_preserves_unmodified_types(self):
+        rows = [[7, 0.35], [3, 0.25], [1, 0.6], [None, 0], [True, 1]]
+        result, stats = transform(rows, ['Board #', 'Percentage'], r'\b\d+\b', ['Board #'], '1')
+        self.assertEqual(result, [['1', 0.35], ['1', 0.25], [1, 0.6], [None, 0], [True, 1]])
+        self.assertEqual(stats['matches'], 3)
+        self.assertEqual(stats['changed_cells'], 2)
+        self.assertEqual(stats['changes'][0]['before'], '7')
+        unchanged, stats = transform([[12.5]], ['Number'], 'absent', ['Number'], 'x')
+        self.assertEqual(unchanged, [[12.5]])
+        self.assertEqual(stats['matches'], 0)
+        changed, _ = transform([[12.5]], ['Number'], r'12\.5', ['Number'], '')
+        self.assertEqual(changed, [['']])
 
     def test_regex_errors_and_timeout(self):
         for pattern in ('[', 'a*'):
