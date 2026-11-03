@@ -4,7 +4,11 @@ A Django + React application that turns plain-language descriptions into regular
 
 **Source:** [Daniel-Eley/pattern-studio](https://github.com/Daniel-Eley/pattern-studio)
 
-**Submission status:** Source is published and deployment configuration is included. A public deployment, live LLM verification, and recorded demo still need to be completed. No public application URL or video is claimed yet.
+**Live app:** [Open Pattern Studio](https://pattern-studio-gp75.onrender.com/)
+
+**Submission status:** Source and the public app are published. Live Groq and production upload → preview → apply → CSV/XLSX export → reset were verified on 3 November 2026. All 14 backend tests pass. The demo video remains to be recorded and embedded.
+
+![Pattern Studio after applying replacements](docs/live-result.png)
 
 ## Features
 
@@ -139,7 +143,7 @@ The recording has not been made yet. Use [the 90-second demo script](docs/demo-s
 ## Submission checklist
 
 - [x] GitHub repository published and accessible to reviewers
-- [ ] Production LLM key configured and live requests verified
-- [ ] Public URL tested end to end
+- [x] Production LLM key configured and live requests verified
+- [x] Public URL tested end to end
 - [ ] Demo video recorded and embedded above
 - [ ] Explain the design, limitations, and tests confidently in the interview
