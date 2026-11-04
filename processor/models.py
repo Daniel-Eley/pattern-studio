@@ -21,6 +21,7 @@ class Operation(models.Model):
     columns = models.JSONField()
     replacement = models.TextField()
     ignore_case = models.BooleanField(default=False)
+    row_filters = models.JSONField(default=list)
     source_version = models.PositiveIntegerField()
     applied = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -107,9 +107,10 @@ def preview(request, pk):
         raise InputError('Select valid columns.')
     plan = generate_plan(description, dataset.columns)
     targets = selected if selected is not None else plan.columns
-    _, stats = transform(dataset.rows, dataset.columns, plan.pattern, targets, replacement, plan.ignore_case)
-    operation = Operation.objects.create(dataset=dataset, description=description, pattern=plan.pattern, columns=targets, replacement=replacement, ignore_case=plan.ignore_case, source_version=dataset.version)
-    return JsonResponse({'operation_id': str(operation.id), 'pattern': plan.pattern, 'columns': targets, 'ignore_case': plan.ignore_case, 'explanation': plan.explanation, **stats})
+    filters = [condition.model_dump() for condition in plan.row_filters]
+    _, stats = transform(dataset.rows, dataset.columns, plan.pattern, targets, replacement, plan.ignore_case, filters)
+    operation = Operation.objects.create(dataset=dataset, description=description, pattern=plan.pattern, columns=targets, replacement=replacement, ignore_case=plan.ignore_case, row_filters=filters, source_version=dataset.version)
+    return JsonResponse({'operation_id': str(operation.id), 'pattern': plan.pattern, 'columns': targets, 'ignore_case': plan.ignore_case, 'explanation': plan.explanation, 'row_filters': filters, **stats})
 
 
 @require_POST
@@ -120,7 +121,7 @@ def apply(request, pk, operation_id):
     operation = get_object_or_404(Operation, pk=operation_id, dataset=dataset)
     if operation.applied or operation.source_version != dataset.version:
         return JsonResponse({'error': 'The data has changed. Generate a fresh preview.'}, status=409)
-    rows, stats = transform(dataset.rows, dataset.columns, operation.pattern, operation.columns, operation.replacement, operation.ignore_case)
+    rows, stats = transform(dataset.rows, dataset.columns, operation.pattern, operation.columns, operation.replacement, operation.ignore_case, operation.row_filters)
     # Optimistic guard also protects SQLite deployments where row locks are unavailable.
     updated = Dataset.objects.filter(pk=dataset.pk, version=operation.source_version).update(rows=rows, version=dataset.version + 1)
     if not updated:

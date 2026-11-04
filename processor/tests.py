@@ -75,6 +75,31 @@ class WorkflowTests(TestCase):
         token = client.cookies['csrftoken'].value
         self.assertEqual(client.post('/api/datasets/', HTTP_X_CSRFTOKEN=token).status_code, 400)
 
+    @patch('processor.views.generate_plan')
+    def test_conditional_excel_preview_apply_export_and_reset(self, generate):
+        book = openpyxl.Workbook()
+        source = [['SWEN90014', 2], ['SWEN90014', 6], ['SWEN90016', 5], ['SWEN900140', 7], [None, 4]]
+        book.active.append(['Course', 'Board #'])
+        for row in source:
+            book.active.append(row)
+        file = io.BytesIO(); book.save(file)
+        uploaded = self.client.post('/api/datasets/', {'file': SimpleUploadedFile('courses.xlsx', file.getvalue())}).json()
+        url = f'/api/datasets/{uploaded["id"]}/'
+        filters = [{'column': 'Course', 'pattern': '^SWEN90014$', 'ignore_case': False}]
+        generate.return_value = PatternPlan(pattern=r'\b\d+\b', columns=['Board #'], ignore_case=False, explanation='Only matching course rows.', row_filters=filters)
+        preview = self.client.post(url + 'preview/', {'description': 'All board numbers with course SWEN90014', 'replacement': '8'}, content_type='application/json').json()
+        self.assertEqual(preview['row_filters'], filters)
+        self.assertEqual(preview['eligible_rows'], 2)
+        self.assertEqual(preview['changed_cells'], 2)
+        result = self.client.post(url + f'apply/{preview["operation_id"]}/').json()
+        expected = [['SWEN90014', '8'], ['SWEN90014', '8'], *source[2:]]
+        self.assertEqual(result['rows'], expected)
+        self.assertEqual(generate.call_count, 1)
+        exported = openpyxl.load_workbook(io.BytesIO(self.client.get(url + 'download/?format=xlsx').content))
+        self.assertEqual(exported.active['B2'].value, '8')
+        self.assertEqual(exported.active['B4'].value, 5)
+        self.assertEqual(self.client.post(url + 'reset/').json()['rows'], source)
+
 
 class ServicesTests(TestCase):
     def test_bad_files(self):
@@ -112,6 +137,18 @@ class ServicesTests(TestCase):
         with self.assertRaisesRegex(InputError, 'too long'):
             transform([['a' * 10000 + '!']], ['a'], '(a+)+$', ['a'], 'x')
 
+    def test_row_filters_validate_and_use_original_row(self):
+        filters = [{'column': 'Course', 'pattern': '^swen90014$', 'ignore_case': True}, {'column': 'Board #', 'pattern': '^2$', 'ignore_case': False}]
+        rows = [['SWEN90014', 2], ['SWEN90014', 6], ['Other', 2]]
+        result, stats = transform(rows, ['Course', 'Board #'], r'\d+', ['Course', 'Board #'], '8', row_filters=filters)
+        self.assertEqual(result, [['SWEN8', '8'], *rows[1:]])
+        self.assertEqual(stats['eligible_rows'], 1)
+        for condition in [dict(filters[0], column='Missing'), dict(filters[0], pattern='[')]:
+            with self.assertRaises(InputError):
+                transform(rows, ['Course', 'Board #'], r'\d+', ['Board #'], '8', row_filters=[condition])
+        with self.assertRaisesRegex(InputError, 'too long'):
+            transform([['a' * 10000 + '!', 2]], ['Course', 'Board #'], r'\d+', ['Board #'], '8', row_filters=[dict(filters[0], pattern='(a+)+$')])
+
     def test_formula_export_protection(self):
         content, _ = export_data(['=header'], [['=1+1'], [' +SUM(A1)'], ['@SUM(A1)']], 'csv')
         self.assertIn(b"'=1+1", content)
@@ -121,7 +158,7 @@ class ServicesTests(TestCase):
     @override_settings(DEMO_MODE=False, LLM_PROVIDER='openai')
     @patch('processor.services.OpenAI')
     def test_real_llm_adapter_passes_no_cell_data(self, mock_client):
-        plan = PatternPlan(pattern=r'\d{3}', columns=['Code'], ignore_case=False, explanation='Three digits')
+        plan = PatternPlan(pattern=r'\d{3}', columns=['Code'], ignore_case=False, explanation='Three digits', row_filters=[])
         mock_client.return_value.responses.parse.return_value = SimpleNamespace(output_parsed=plan)
         self.assertEqual(generate_plan('Find three digits', ['Code']), plan)
         call = mock_client.return_value.responses.parse.call_args.kwargs
@@ -140,7 +177,7 @@ class ServicesTests(TestCase):
     @patch.dict('os.environ', {'GROQ_API_KEY': 'test-only-key'})
     @patch('processor.services.OpenAI')
     def test_groq_adapter_and_validation(self, mock_client):
-        plan = PatternPlan(pattern=r'\d{3}', columns=['Code'], ignore_case=False, explanation='Three digits')
+        plan = PatternPlan(pattern=r'\d{3}', columns=['Code'], ignore_case=False, explanation='Three digits', row_filters=[])
         completion = mock_client.return_value.chat.completions.create
         completion.return_value = SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content=plan.model_dump_json()))])
         self.assertEqual(generate_plan('Find three digits', ['Code']), plan)

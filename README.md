@@ -16,6 +16,7 @@ A Django + React application that turns plain-language descriptions into regular
 - Describe a pattern (for example, “Find email addresses in the Email column”).
 - Generate a structured regex plan with Groq (free tier) or the optional OpenAI provider; view the regex, explanation, match count, and before/after cells.
 - Override the target column, supply a literal replacement, or leave it blank to remove matches.
+- Describe row conditions, such as “All board numbers with course SWEN90014”. The preview shows the target columns, row-filter regexes, and eligible-row count. Filters are evaluated against the original row before modifying cells.
 - Apply only after preview, reset to the original data, and download CSV or XLSX.
 - Session-scoped datasets, CSRF protection, bounded file parsing, regex execution deadlines, and formula-safe exports.
 - Clearly labelled offline sample mode for email, phone, and URL presets. **Sample mode does not satisfy the LLM requirement.**
@@ -138,6 +139,7 @@ The recording has not been made yet. Use [the 90-second demo script](docs/demo-s
 - Free deployment storage is ephemeral: a restart, spin-down, or redeploy can delete datasets and sessions sooner. Workspace access otherwise expires after 24 hours. Data is not automatically deleted at the instant access expires. Schedule `python manage.py cleanup_data` hourly on your host to delete expired datasets, and `python manage.py clearsessions` daily for session records. Cleanup also runs on container startup.
 - Limits are per session (10 uploads and 30 successful previews/hour), not abuse-proof global rate limiting. Before promoting beyond a reviewer demo, add authenticated accounts, edge rate limiting, a provider spending limit, scheduled cleanup, and monitoring. Failed LLM requests do not consume the preview quota.
 - Regex generation is probabilistic; review the pattern and preview. Email and phone matching are practical patterns, not complete standards validators.
+- Row conditions use per-column regex searches and are combined with AND (up to 10). Exact equality uses anchored patterns. Numeric comparisons, joins, and arbitrary spreadsheet calculations are not supported.
 - Optional extra LLM transformations and large-file support are intentionally outside the initial scope.
 
 ## Submission checklist
